@@ -9,7 +9,7 @@ ifeq ($(wildcard $(KERNEL_BUILD)),)
     AVAILABLE_BUILD := $(shell ls -td /lib/modules/*/build 2>/dev/null | head -1)
     ifneq ($(AVAILABLE_BUILD),)
         KERNEL_BUILD := $(AVAILABLE_BUILD)
-        $(warning WARNING: Using ker/var/tmp/test_module/log.txtnel headers from $(KERNEL_BUILD) instead of $(KERNEL_VERSION))
+        $(warning WARNING: Using kernel headers from $(KERNEL_BUILD) instead of $(KERNEL_VERSION))
         $(warning This may cause compatibility issues. Consider installing matching headers.)
     endif
 endif
