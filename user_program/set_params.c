@@ -4,14 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <fcntl.h>
 #include <errno.h>
 #include <limits.h>
-#include <ctype.h>
-#include <stdbool.h>
 
 #define MODULE_NAME "test_module"
 #define SYSFS_BASE "/sys/module/" MODULE_NAME "/parameters"
@@ -25,27 +19,15 @@
 typedef struct {
     const char *filename;
     unsigned int period;
-    bool load_module;
 } module_params_t;
 
 static void params_init(module_params_t *params)
 {
     params->filename = NULL;
     params->period = 0;
-    params->load_module = false;
 }
 
 void print_usage(const char *prog_name){}
-
-int is_module_loaded(void)
-{
-    return 0;
-}
-
-int load_module_with_params(const char *filename, unsigned int period)
-{
-    return 0;
-}
 
 int validate_filepath(const char *filename)
 {
@@ -86,8 +68,6 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "Error: -p requires a period value\n");
                 return 1;
             }
-        } else if (strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--load") == 0) {
-            params.load_module = true;
         } else {
             fprintf(stderr, "Unknown option: %s\n", argv[i]);
             print_usage(argv[0]);
@@ -95,68 +75,41 @@ int main(int argc, char *argv[])
         }
     }
 
-    int module_loaded = is_module_loaded();
+    if (!params.filename && params.period == 0) {
+        fprintf(stderr, "Error: At least one parameter (filename or period) must be specified\n");
+        print_usage(argv[0]);
+        return 1;
+    }
 
-    if (params.load_module) {
-        if (!params.filename || params.period == 0) {
-            fprintf(stderr, "Error: Both filename and period must be specified for loading\n");
+    if (params.filename) {
+        if (validate_filepath(params.filename) != 0) {
             return 1;
         }
+        printf("Setting filename parameter to: %s\n", params.filename);
+        if (write_sysfs_param(PARAM_FILENAME, params.filename) != 0) {
+            fprintf(stderr, "Failed to set filename parameter\n");
+            ret = 1;
+            goto cleanup;
+        }
+        printf("Filename parameter set successfully\n");
+    }
 
-        if (module_loaded) {
-            printf("Module is already loaded. Unloading first...\n");
-            int sys_ret = system("sudo rmmod " MODULE_NAME);
-            if (sys_ret != 0) {
-                fprintf(stderr, "Warning: Failed to unload existing module "
-                        "(exit code: %d)\n", WEXITSTATUS(sys_ret));
-            }
+    if (params.period > 0) {
+        char period_str[PERIOD_STR_BUF_SIZE];
+        int n = snprintf(period_str, sizeof(period_str), "%u", params.period);
+        if (n < 0 || (size_t)n >= sizeof(period_str)) {
+            fprintf(stderr, "Error: Failed to format period string\n");
+            ret = 1;
+            goto cleanup;
         }
 
-        printf("Loading module with parameters:\n");
-        printf("  Filename: %s\n", params.filename);
-        printf("  Period: %u seconds\n", params.period);
-
-        if (load_module_with_params(params.filename, params.period) != 0) {
-            return 1;
+        printf("Setting timer_period parameter to: %u seconds\n", params.period);
+        if (write_sysfs_param(PARAM_TIMER_PERIOD, period_str) != 0) {
+            fprintf(stderr, "Failed to set timer_period parameter\n");
+            ret = 1;
+            goto cleanup;
         }
-
-        printf("Module loaded successfully\n");
-    } else {
-        if (!module_loaded) {
-            fprintf(stderr, "Error: Module is not loaded. Use -l to load it with parameters.\n");
-            return 1;
-        }
-
-        if (params.filename) {
-            if (validate_filepath(params.filename) != 0) {
-                return 1;
-            }
-            printf("Setting filename parameter to: %s\n", params.filename);
-            if (write_sysfs_param(PARAM_FILENAME, params.filename) != 0) {
-                fprintf(stderr, "Failed to set filename parameter\n");
-                ret = 1;
-                goto cleanup;
-            }
-            printf("Filename parameter set successfully\n");
-        }
-
-        if (params.period > 0) {
-            char period_str[PERIOD_STR_BUF_SIZE];
-            int n = snprintf(period_str, sizeof(period_str), "%u", params.period);
-            if (n < 0 || (size_t)n >= sizeof(period_str)) {
-                fprintf(stderr, "Error: Failed to format period string\n");
-                ret = 1;
-                goto cleanup;
-            }
-
-            printf("Setting timer_period parameter to: %u seconds\n", params.period);
-            if (write_sysfs_param(PARAM_TIMER_PERIOD, period_str) != 0) {
-                fprintf(stderr, "Failed to set timer_period parameter\n");
-                ret = 1;
-                goto cleanup;
-            }
-            printf("Timer period parameter set successfully\n");
-        }
+        printf("Timer period parameter set successfully\n");
     }
 
 cleanup:
