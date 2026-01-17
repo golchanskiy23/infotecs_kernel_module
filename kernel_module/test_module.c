@@ -190,6 +190,13 @@ static void timer_callback(struct timer_list *t)
         goto reschedule;
     }
 
+    if (!filename) {
+        pr_err("test_module: Filename parameter is NULL\n");
+        kfree(message);
+        kfree(w);
+        goto reschedule;
+    }
+
     filepath = kstrdup(filename, GFP_ATOMIC);
     if (!filepath) {
         pr_err("test_module: Failed to allocate memory for filepath\n");
@@ -211,17 +218,19 @@ static void timer_callback(struct timer_list *t)
     w->message = message;
     w->filepath = filepath;
 
-    if (state->wq) {
+    if (state->wq && state->module_active) {
         queue_work(state->wq, &w->work);
     } else {
-        pr_err("test_module: Workqueue not initialized\n");
+        pr_err("test_module: Workqueue not initialized or module inactive\n");
         kfree(message);
         kfree(filepath);
         kfree(w);
+        goto reschedule;
     }
 
 reschedule:
-    if (state->module_active && timer_period > 0) {
+    /* Проверяем module_active еще раз перед перепланированием таймера */
+    if (state && state->module_active && timer_period > 0) {
         delay = msecs_to_jiffies(timer_period * 1000);
         if (delay == 0)
             delay = 1;
@@ -303,7 +312,10 @@ static void __exit test_module_exit(void)
         module_state->wq = NULL;
     }
 
-    write_to_file("Module unloaded\n", filename);
+    /* Записываем финальное сообщение только если filename валиден */
+    if (filename && is_valid_path(filename)) {
+        write_to_file("Module unloaded\n", filename);
+    }
 
     kfree(module_state);
     module_state = NULL;
